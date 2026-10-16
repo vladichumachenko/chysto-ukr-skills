@@ -20,6 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-The files skills/chysto/data/lt-replace.tsv is derived from LanguageTool and is
+The file skills/chysto/data/lt-replace.tsv is derived from LanguageTool and is
 licensed under the GNU Lesser General Public License v2.1; see
 skills/chysto/data/NOTICE-languagetool.md.
