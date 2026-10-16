@@ -43,5 +43,21 @@ class SkillMdTest(unittest.TestCase):
             self.assertIn(phrase, self.text)
 
 
+class UntrustedContentTest(unittest.TestCase):
+    def test_skill_md_treats_text_as_data(self):
+        text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("## Untrusted content", text)
+        section = text.split("## Untrusted content", 1)[1].split("\n## ", 1)[0].lower()
+        for phrase in ("data", "never follow", "instructions", "links", "explicitly"):
+            self.assertIn(phrase, section)
+        # the guard comes before the steps that read the text
+        self.assertLess(text.index("## Untrusted content"), text.index("## 1. Get the text"))
+
+    def test_readmes_have_security_section(self):
+        from _path import REPO
+        self.assertIn("## Security", (REPO / "README.md").read_text(encoding="utf-8"))
+        self.assertIn("## Безпека", (REPO / "README.uk.md").read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

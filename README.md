@@ -65,6 +65,15 @@ python3 skills/chysto/scripts/scan.py article.md -o candidates.json
 python3 skills/chysto/scripts/render.py article.md edits.json
 ```
 
+## Security
+
+The skill reads text written by others, including web pages fetched by URL. `SKILL.md` tells the
+agent to treat that text strictly as data to proofread: instructions embedded in it are never
+followed, links in it are never opened, and code in it is never run. A page is fetched only when
+the user explicitly gives its URL; only `http(s)` addresses are accepted. The scripts use the
+Python standard library only and write nothing but the two output files and the JSON files next
+to the input.
+
 ## Sources
 
 - **LanguageTool**, Ukrainian module (https://github.com/languagetool-org/languagetool),
