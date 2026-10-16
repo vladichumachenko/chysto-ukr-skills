@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.review.html
+*.fixed.md
+candidates.json
+edits.json
