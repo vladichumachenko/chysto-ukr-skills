@@ -19,6 +19,12 @@ ENDINGS = sorted("ами ями ові еві ого ому ими іми ій �
                  "а я у ю і ї е о и".split(), key=len, reverse=True)
 REFLEXIVE = ("ться", "ся", "сь")
 MIN_STEM = 3
+MIN_MATCH_STEM = 4      # shorter shared stems collide (вона/вон, кажу/кажись)
+MIN_PATTERN_LEN = 3     # one- and two-letter LT patterns are context rules, unusable here
+# A pattern may match other forms only if it looks like a dictionary form; patterns in
+# oblique cases (моделів, статтів) are form-specific errors and match exactly.
+OBLIQUE_ENDINGS = ("ів", "їв", "ами", "ями", "ах", "ях", "ові", "еві", "ого", "ому", "ими", "іми",
+                   "ою", "ею", "ам", "ям", "ом", "ем", "им", "ім", "ої")
 
 TRANSLIT = {"и": "і", "ы": "и", "э": "е", "ъ": "'", "ё": "ьо"}
 WORD_RX = re.compile(r"[\w'’ʼ́-]+", re.U)
@@ -73,10 +79,12 @@ class Entry:
 
 @dataclass
 class Lexicon:
-    singles: dict = field(default_factory=dict)   # stem -> [Entry]
+    singles: dict = field(default_factory=dict)   # stem -> [Entry] (lemma-like patterns only)
+    exact: dict = field(default_factory=dict)     # normalized pattern -> [Entry]
     multi: list = field(default_factory=list)     # [Entry] with multi-word patterns
     slovnik: dict = field(default_factory=dict)   # normalized ru head -> [row dict]
     _translit: dict = None
+    _by_uk: dict = None
 
     @classmethod
     def load(cls, data_dir) -> "Lexicon":
@@ -102,17 +110,33 @@ class Lexicon:
         if len(toks) > 1:
             self.multi.append(e)
         elif toks:
-            for s in stems(toks[0]):
-                self.singles.setdefault(s, []).append(e)
+            w = normalize(toks[0])
+            if len(w) < MIN_PATTERN_LEN:
+                return
+            self.exact.setdefault(w, []).append(e)
+            if not w.endswith(OBLIQUE_ENDINGS):
+                for s in stems(w):
+                    if len(s) >= MIN_MATCH_STEM:
+                        self.singles.setdefault(s, []).append(e)
 
     def lookup_word(self, word: str) -> list:
-        """Single-word entries whose pattern shares a stem with word (deduplicated, stable order)."""
+        """Single-word entries matching word exactly or by a shared stem of >= 4 letters.
+
+        Entries whose only suggestion is the word itself (e.g. «туда» -> «туди» found on «туди»)
+        are dropped.
+        """
+        w = normalize(word)
         seen, out = set(), []
-        for s in stems(word):
-            for e in self.singles.get(s, []):
-                if id(e) not in seen:
-                    seen.add(id(e))
-                    out.append(e)
+        pools = [self.exact.get(w, [])] + [self.singles.get(s, []) for s in stems(w)
+                                           if len(s) >= MIN_MATCH_STEM]
+        for pool in pools:
+            for e in pool:
+                if id(e) in seen:
+                    continue
+                seen.add(id(e))
+                if all(normalize(s) == w for s in e.suggestions):
+                    continue
+                out.append(e)
         return out
 
     def phrases(self) -> list:
@@ -128,6 +152,19 @@ class Lexicon:
             for head, rows in self.slovnik.items():
                 self._translit.setdefault(ru_to_uk_translit(head), []).extend(rows)
         return self._translit
+
+
+    def slovnik_by_uk(self, word: str) -> list:
+        """1918 rows whose Ukrainian side contains word (normalized, exact token match)."""
+        if self._by_uk is None:
+            self._by_uk = {}
+            for rows in self.slovnik.values():
+                for row in rows:
+                    for w in set(normalize(t) for t in words(row["uk"])):
+                        bucket = self._by_uk.setdefault(w, [])
+                        if not bucket or bucket[-1] is not row:
+                            bucket.append(row)
+        return list(self._by_uk.get(normalize(word), []))
 
 
 def _read(path: Path) -> list:

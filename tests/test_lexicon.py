@@ -49,8 +49,27 @@ class LookupTest(unittest.TestCase):
         self.assertEqual((hits[0].type, hits[0].level, hits[0].source), ("rusism", "error", "lt"))
 
     def test_short_words_do_not_overmatch(self):
-        lex = make_lex(lt="по\tза\terror\t\n")
+        lex = make_lex(lt="поза\tза\terror\t\n")
         self.assertEqual(lex.lookup_word("потік"), [])
+
+    def test_short_stem_does_not_collide(self):
+        lex = make_lex(lt="вон\tгеть\terror\t\nкажись\tначе\terror\t\n")
+        self.assertEqual(lex.lookup_word("вона"), [])
+        self.assertEqual(lex.lookup_word("кажу"), [])
+
+    def test_oblique_form_pattern_matches_exactly_only(self):
+        lex = make_lex(lt="моделів\tмоделей\terror\t\n")
+        self.assertEqual(lex.lookup_word("моделі"), [])
+        self.assertEqual(len(lex.lookup_word("моделів")), 1)
+
+    def test_one_and_two_letter_patterns_ignored(self):
+        lex = make_lex(lt="в\tна\terror\t\nпо\tз\terror\t\n")
+        self.assertEqual(lex.lookup_word("в"), [])
+        self.assertEqual(lex.lookup_word("по"), [])
+
+    def test_identity_suggestion_dropped(self):
+        lex = make_lex(lt="туда\tтуди\terror\t\n")
+        self.assertEqual(lex.lookup_word("туди"), [])
 
     def test_advice_source(self):
         lex = make_lex(soft="айтішник\tайтівець\tadvice\t\n")
