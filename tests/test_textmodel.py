@@ -38,3 +38,30 @@ class TextModelTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FenceTest(unittest.TestCase):
+    def kinds_with(self, md, word="задача"):
+        return [b.kind for b in split_blocks(md) if word in b.text]
+
+    def test_nested_fence_four_backticks(self):
+        md = "Текст.\n\n````md\n```go\nзадача\n```\n````\n\nКінець.\n"
+        self.assertEqual(self.kinds_with(md), ["code"])
+        self.assertEqual(join_blocks(split_blocks(md)), md)
+
+    def test_indented_code_block(self):
+        md = "Текст.\n\n    задача := 1\n    ще рядок\n\nКінець.\n"
+        self.assertEqual(self.kinds_with(md), ["code"])
+
+    def test_fence_inside_list_item(self):
+        md = "- пункт\n\n  ```\n  задача\n\n  ще\n  ```\n\nКінець.\n"
+        self.assertEqual(self.kinds_with(md), ["code"])
+
+    def test_fence_inside_blockquote(self):
+        md = "> цитата\n>\n> ```\n> задача\n> ```\n"
+        self.assertNotIn("text", self.kinds_with(md))
+
+    def test_crlf_roundtrip(self):
+        md = "Рядок один.\r\n\r\n```\r\nзадача\r\n```\r\n"
+        self.assertEqual(join_blocks(split_blocks(md)), md)
+        self.assertEqual(self.kinds_with(md), ["code"])

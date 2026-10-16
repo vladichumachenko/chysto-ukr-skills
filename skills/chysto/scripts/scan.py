@@ -64,15 +64,16 @@ def _candidate(block_id, text, start, end, entry, lex):
     }
 
 
-def _phrase_hits(toks: list, lex) -> list:
-    """(i, j, entry): tokens i..j-1 match a multi-word pattern stem by stem."""
+def _phrase_hits(toks: list, lex, spans: list) -> list:
+    """(i, j, entry): tokens i..j-1 match a multi-word pattern stem by stem, with no code inside."""
     hits = []
     tok_stems = [set(stems(t[2])) for t in toks]
     for e in lex.phrases():
         pat = [set(stems(w)) for w in e.pattern.split()]
         n = len(pat)
         for i in range(len(toks) - n + 1):
-            if all(tok_stems[i + k] & pat[k] for k in range(n)):
+            if all(tok_stems[i + k] & pat[k] for k in range(n)) \
+                    and not is_protected(spans, toks[i][0], toks[i + n - 1][1]):
                 hits.append((i, i + n, e))
     return hits
 
@@ -99,7 +100,7 @@ def scan_block(block, lex, keep_singles, keep_phrases) -> list:
     spans = protected_spans(text)
     toks = [t for t in tokenize(text) if not is_protected(spans, t[0], t[1])]
     found = []
-    for i, j, e in _phrase_hits(toks, lex):
+    for i, j, e in _phrase_hits(toks, lex, spans):
         found.append(_candidate(block.id, text, toks[i][0], toks[j - 1][1], e, lex))
     for start, end, word in toks:
         for e in lex.lookup_word(word):
@@ -148,7 +149,8 @@ def main(argv=None) -> int:
     ap.add_argument("--data", default=str(Path(__file__).resolve().parent.parent / "data"))
     ap.add_argument("-o", "--output", default="candidates.json")
     a = ap.parse_args(argv)
-    md = Path(a.input).read_text(encoding="utf-8")
+    with open(a.input, encoding="utf-8", newline="") as f:  # keep CRLF: offsets must match render
+        md = f.read()
     result = scan_text(md, Lexicon.load(a.data), load_keep(a.keep), source=a.input)
     Path(a.output).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     counts = {}

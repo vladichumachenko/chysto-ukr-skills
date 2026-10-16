@@ -7,6 +7,7 @@ paragraphs, lists, quotes, code.
 Usage: python3 fetch.py URL [-o FILE.md]
 """
 import argparse
+import http.client
 import re
 import sys
 import urllib.request
@@ -19,7 +20,7 @@ DROP = {"script", "style", "button", "svg", "form", "noscript", "template", "ifr
 # these elements are part of the text (e.g. a glossary in an <aside>).
 CHROME = {"nav", "header", "footer", "aside"}
 VOID = {"br", "hr", "img", "input", "meta", "link", "source", "wbr", "area", "base", "col", "embed", "track"}
-BLOCKS = {"p", "div", "section", "figure", "figcaption", "dl", "dt", "dd", "table", "tr", "details", "summary"}
+BLOCKS = {"p", "div", "section", "figure", "figcaption", "dl", "dt", "dd", "details", "summary"}
 MIN_CHARS = 200
 USER_AGENT = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/126 Safari/537.36")
@@ -90,6 +91,44 @@ def _inline(node) -> str:
     return "".join(out)
 
 
+def _descendants(node, tags):
+    for c in node.children:
+        if isinstance(c, Node):
+            if c.tag in tags:
+                yield c
+            else:
+                yield from _descendants(c, tags)
+
+
+def _table(node) -> str:
+    """Rows as Markdown-like lines `| a | b |`, so cell words never run together."""
+    rows = []
+    for tr in _descendants(node, {"tr"}):
+        cells = [_clean(_inline(td)).replace("\n", " ") for td in _descendants(tr, {"td", "th"})]
+        if any(cells):
+            rows.append("| " + " | ".join(cells) + " |")
+    return "\n".join(rows)
+
+
+def _list(node, depth: int = 0) -> list:
+    """Lines of a (possibly nested) list; nested lists are indented by two spaces per level."""
+    lines, n = [], 0
+    for li in node.children:
+        if not (isinstance(li, Node) and li.tag == "li"):
+            continue
+        n += 1
+        own = Node("li")
+        own.children = [c for c in li.children if not (isinstance(c, Node) and c.tag in ("ul", "ol"))]
+        marker = f"{n}." if node.tag == "ol" else "-"
+        text = _clean(_inline(own)).replace("\n", " ")
+        if text:
+            lines.append("  " * depth + f"{marker} {text}")
+        for sub in li.children:
+            if isinstance(sub, Node) and sub.tag in ("ul", "ol"):
+                lines.extend(_list(sub, depth + 1))
+    return lines
+
+
 def _clean(s: str) -> str:
     return "\n".join(re.sub(r"[ \t\r\f\v ]+", " ", ln).strip() for ln in s.split("\n")).strip()
 
@@ -129,11 +168,14 @@ def _render(node, out: list, drop=DROP) -> None:
             out.append("```\n" + _text(c).strip("\n") + "\n```")
         elif tag in ("ul", "ol"):
             flush()
-            items = [_clean(_inline(li)) for li in c.children if isinstance(li, Node) and li.tag == "li"]
-            marker = (lambda i: f"{i}.") if tag == "ol" else (lambda i: "-")
-            lines = [f"{marker(i)} {t}" for i, t in enumerate(items, 1) if t]
+            lines = _list(c)
             if lines:
                 out.append("\n".join(lines))
+        elif tag == "table":
+            flush()
+            table = _table(c)
+            if table:
+                out.append(table)
         elif tag == "blockquote":
             flush()
             inner = []
@@ -161,6 +203,16 @@ def html_to_markdown(page: str) -> str:
     return md
 
 
+def normalize_url(url: str) -> str:
+    """Add https:// to a bare address; refuse anything that is not http(s)."""
+    url = url.strip()
+    if "://" not in url:
+        url = "https://" + url
+    if urlparse(url).scheme not in ("http", "https") or not urlparse(url).netloc:
+        raise FetchError(f"only http(s) web addresses are supported: {url}")
+    return url
+
+
 def output_name(url: str) -> str:
     p = urlparse(url)
     segs = [s for s in p.path.split("/") if s]
@@ -182,14 +234,16 @@ def main(argv=None) -> int:
     ap.add_argument("-o", "--output", default=None)
     a = ap.parse_args(argv)
     try:
-        md = html_to_markdown(fetch(a.url))
+        url = normalize_url(a.url)
+        md = html_to_markdown(fetch(url))
     except FetchError as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
-    except OSError as err:  # urllib.error.URLError and HTTPError are OSError subclasses
+    except (OSError, ValueError, LookupError, http.client.HTTPException) as err:
+        # URLError/HTTPError are OSError; a bad charset is LookupError
         print(f"error: could not fetch {a.url}: {err}", file=sys.stderr)
         return 1
-    out = Path(a.output or output_name(a.url))
+    out = Path(a.output or output_name(url))
     out.write_text(md, encoding="utf-8")
     print(f"{len(md)} characters -> {out}")
     return 0

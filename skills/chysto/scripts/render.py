@@ -18,6 +18,8 @@ from textmodel import is_protected, join_blocks, protected_spans, split_blocks
 TYPES = ("rusism", "calque", "jargon", "restructure")
 LEVELS = ("error", "advice")
 EDITABLE_KINDS = ("text", "heading")
+# Markdown markup at the start of a line that an edit must not swallow.
+LINE_MARKUP = re.compile(r"^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|>[ \t]?|\|[ \t]*)*")
 
 
 class EditError(Exception):
@@ -39,6 +41,9 @@ def locate(blocks: list, e: dict) -> tuple:
         raise EditError(f"edit {eid}: unknown type {e.get('type')!r}; expected one of {TYPES}")
     if e.get("level") not in LEVELS:
         raise EditError(f"edit {eid}: unknown level {e.get('level')!r}; expected one of {LEVELS}")
+    after = e.get("after")
+    if not isinstance(after, str):
+        raise EditError(f"edit {eid}: `after` must be a string")
     bid = e.get("block")
     if not isinstance(bid, int) or not 0 <= bid < len(blocks):
         raise EditError(f"edit {eid}: block {bid!r} does not exist")
@@ -55,12 +60,22 @@ def locate(blocks: list, e: dict) -> tuple:
     start, end = hits[0], hits[0] + len(before)
     if is_protected(protected_spans(block.text), start, end):
         raise EditError(f"edit {eid}: `before` touches code, math or a URL in block {bid}")
+    line_start = block.text.rfind("\n", 0, start) + 1
+    markup_end = line_start + LINE_MARKUP.match(block.text[line_start:]).end()
+    if start < markup_end:
+        raise EditError(f"edit {eid}: `before` includes Markdown markup (#, -, >, |) at the start "
+                        f"of a line in block {bid}; start `before` after the markup")
     return block, start, end
 
 
 def validate_edits(blocks: list, edits: list) -> None:
-    spans = {}
+    if not isinstance(edits, list) or not all(isinstance(e, dict) for e in edits):
+        raise EditError("edits.json must be a JSON list of edit objects")
+    spans, seen = {}, set()
     for e in edits:
+        if e.get("id") in seen:
+            raise EditError(f"edit {e.get('id')}: duplicate id")
+        seen.add(e.get("id"))
         block, start, end = locate(blocks, e)
         for other_id, s, t in spans.get(block.id, []):
             if start < t and s < end:
@@ -206,17 +221,23 @@ def main(argv=None) -> int:
     ap.add_argument("-o", "--outdir", default=None, help="output directory (default: next to INPUT)")
     a = ap.parse_args(argv)
     src = Path(a.input)
-    md = src.read_text(encoding="utf-8")
-    edits = json.loads(Path(a.edits).read_text(encoding="utf-8"))
     try:
+        with open(src, encoding="utf-8", newline="") as f:  # keep CRLF byte for byte
+            md = f.read()
+        with open(a.edits, encoding="utf-8") as f:
+            edits = json.load(f)
         fixed = apply_edits(md, edits)
         page = render_html(md, edits, _title(md, src.stem))
-    except EditError as err:
+    except json.JSONDecodeError as err:
+        print(f"error: {a.edits} is not valid JSON: {err}", file=sys.stderr)
+        return 1
+    except (EditError, OSError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
     out = Path(a.outdir) if a.outdir else src.parent
     out.mkdir(parents=True, exist_ok=True)
-    (out / f"{src.stem}.fixed.md").write_text(fixed, encoding="utf-8")
+    with open(out / f"{src.stem}.fixed.md", "w", encoding="utf-8", newline="") as f:
+        f.write(fixed)
     (out / f"{src.stem}.review.html").write_text(page, encoding="utf-8")
     print(f"{len(edits)} edits -> {out / (src.stem + '.fixed.md')}, {out / (src.stem + '.review.html')}")
     return 0

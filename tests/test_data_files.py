@@ -33,6 +33,10 @@ class DataFilesTest(unittest.TestCase):
         for r in read_tsv(DATA / "chysto-jargon.tsv")[1:]:
             self.assertRegex(r[1], r"[A-Za-z]", r[0])
 
+    def test_jargon_suggestions_do_not_keep_calqued_verb(self):
+        for r in read_tsv(DATA / "chysto-jargon.tsv")[1:]:
+            self.assertNotIn("покласти production", r[1], r[0])
+
     def test_data_budget(self):
         self.assertLessEqual(sum(f.stat().st_size for f in DATA.iterdir()), 10 * 1024 * 1024)
 

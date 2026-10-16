@@ -6,8 +6,11 @@ reproduces the document byte for byte. Edits address a block by its id.
 import re
 from dataclasses import dataclass
 
-FENCE = re.compile(r"^(```|~~~)")
+# Fences may be longer than three characters, indented, or inside quotes and list items.
+QUOTE_PREFIX = re.compile(r"^(?:[ \t]*>)*[ \t]*")
+FENCE_OPEN = re.compile(r"(`{3,}|~{3,})")
 HEADING = re.compile(r"^#{1,6}\s")
+INDENTED = re.compile(r"^( {4}|\t)")
 
 # Spans inside a text block that are code, math, or addresses rather than prose.
 PROTECTED = [
@@ -27,6 +30,22 @@ class Block:
     text: str
 
 
+def _strip_prefix(line: str) -> str:
+    return line[QUOTE_PREFIX.match(line).end():]
+
+
+def fence_open(line: str):
+    """(char, length) if line opens a fenced code block, else None."""
+    m = FENCE_OPEN.match(_strip_prefix(line))
+    return (m.group(1)[0], len(m.group(1))) if m else None
+
+
+def fence_closes(line: str, fence) -> bool:
+    rest = _strip_prefix(line).rstrip()
+    char, n = fence
+    return len(rest) >= n and set(rest) == {char}
+
+
 def split_blocks(md: str) -> list:
     """Split Markdown into blocks; join_blocks(split_blocks(md)) == md."""
     lines = md.splitlines(keepends=True)
@@ -40,10 +59,10 @@ def split_blocks(md: str) -> list:
                 j += 1
             raw.append(("blank", "".join(lines[i:j])))
             i = j
-        elif FENCE.match(line):
-            marker = FENCE.match(line).group(1)
+        elif fence_open(line):
+            fence = fence_open(line)
             j = i + 1
-            while j < len(lines) and not lines[j].startswith(marker):
+            while j < len(lines) and not fence_closes(lines[j], fence):
                 j += 1
             j = min(j + 1, len(lines))  # include the closing fence when present
             raw.append(("code", "".join(lines[i:j])))
@@ -54,9 +73,12 @@ def split_blocks(md: str) -> list:
         else:
             j = i
             while (j < len(lines) and lines[j].strip()
-                   and not FENCE.match(lines[j]) and not HEADING.match(lines[j])):
+                   and not fence_open(lines[j]) and not HEADING.match(lines[j])):
                 j += 1
-            raw.append(("text", "".join(lines[i:j])))
+            chunk = lines[i:j]
+            # A paragraph whose every line is indented by 4+ spaces is an indented code block.
+            kind = "code" if all(INDENTED.match(ln) for ln in chunk) else "text"
+            raw.append((kind, "".join(chunk)))
             i = j
     return [Block(n, kind, text) for n, (kind, text) in enumerate(raw)]
 

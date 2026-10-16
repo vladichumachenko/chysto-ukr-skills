@@ -1,7 +1,7 @@
 import unittest
 
 import _path  # noqa: F401
-from fetch import FetchError, html_to_markdown, output_name
+from fetch import FetchError, html_to_markdown, normalize_url, output_name
 
 LONG = "а" * 300
 
@@ -40,6 +40,24 @@ class FetchTest(unittest.TestCase):
                               "<aside><p>Короткий словник хвилі</p></aside></article></body>")
         self.assertIn("Короткий словник хвилі", md)
         self.assertNotIn("реклама", md)
+
+    def test_table_cells_not_glued(self):
+        md = html_to_markdown("<article><p>" + LONG + "</p><table><tr><td>задачі</td><td>кладуться</td></tr>"
+                              "<tr><td>а</td><td>б</td></tr></table></article>")
+        self.assertNotIn("задачікладуться", md)
+        self.assertIn("задачі", md)
+
+    def test_nested_list_not_glued(self):
+        md = html_to_markdown("<article><p>" + LONG + "</p><ul><li>перший<ul><li>вкладений</li></ul></li></ul></article>")
+        self.assertNotIn("першийвкладений", md)
+        self.assertIn("вкладений", md)
+
+    def test_normalize_url(self):
+        self.assertEqual(normalize_url("chumachenko.net.ua/notes/x"), "https://chumachenko.net.ua/notes/x")
+        self.assertEqual(normalize_url("http://a.ua/b"), "http://a.ua/b")
+        for bad in ("file:///etc/passwd", "ftp://a.ua/x"):
+            with self.assertRaises(FetchError):
+                normalize_url(bad)
 
     def test_output_name(self):
         self.assertEqual(output_name("https://www.chumachenko.net.ua/notes/paddle-out/"), "paddle-out.md")

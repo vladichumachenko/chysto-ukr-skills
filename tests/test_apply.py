@@ -64,5 +64,29 @@ class ApplyTest(unittest.TestCase):
             apply_edits(MD, [edit(block=99)])
 
 
+class MarkupAndInputTest(unittest.TestCase):
+    def test_edit_cannot_eat_heading_marker(self):
+        with self.assertRaisesRegex(EditError, r"edit 1.*markup"):
+            apply_edits("## Так от\n", [edit(before="## Так", after="Отож", type="calque")])
+
+    def test_edit_cannot_eat_list_marker(self):
+        with self.assertRaisesRegex(EditError, r"edit 1.*markup"):
+            apply_edits("- задачі тут\n", [edit(before="- задачі")])
+
+    def test_error_edit_without_after_rejected(self):
+        e = edit()
+        del e["after"]
+        with self.assertRaisesRegex(EditError, r"edit 1.*after"):
+            apply_edits("Ці задачі.\n", [e])
+
+    def test_duplicate_ids_rejected(self):
+        with self.assertRaisesRegex(EditError, r"edit 1.*duplicate"):
+            apply_edits("Ці задачі кладуться.\n", [edit(), edit(before="кладуться", after="x")])
+
+    def test_crlf_preserved(self):
+        md = "Ці задачі.\r\n\r\nДругий.\r\n"
+        self.assertEqual(apply_edits(md, [edit()]), "Ці завдання.\r\n\r\nДругий.\r\n")
+
+
 if __name__ == "__main__":
     unittest.main()

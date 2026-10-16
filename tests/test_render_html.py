@@ -73,6 +73,27 @@ class RenderCliTest(unittest.TestCase):
         self.assertEqual((d / "a.fixed.md").read_text(encoding="utf-8"), "Зараз завдання тут.\n")
         self.assertIn("ch-ins", (d / "a.review.html").read_text(encoding="utf-8"))
 
+    def test_crlf_file_without_edits_is_byte_identical(self):
+        d = Path(tempfile.mkdtemp())
+        raw = "Рядок один.\r\n\r\n```\r\nкод\r\n```\r\n".encode("utf-8")
+        (d / "a.md").write_bytes(raw)
+        (d / "e.json").write_text("[]", encoding="utf-8")
+        p = subprocess.run([sys.executable, str(_path.SCRIPTS / "render.py"), str(d / "a.md"), str(d / "e.json")],
+                           capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual((d / "a.fixed.md").read_bytes(), raw)
+
+    def test_bad_json_is_clean_error(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "a.md").write_text("x\n", encoding="utf-8")
+        for bad in ("{not json", '{"id": 1}'):
+            (d / "e.json").write_text(bad, encoding="utf-8")
+            p = subprocess.run([sys.executable, str(_path.SCRIPTS / "render.py"), str(d / "a.md"), str(d / "e.json")],
+                               capture_output=True, text=True)
+            self.assertEqual(p.returncode, 1, bad)
+            self.assertTrue(p.stderr.startswith("error:"), p.stderr)
+            self.assertNotIn("Traceback", p.stderr)
+
     def test_invalid_edits_write_nothing(self):
         d, p = self.run_cli("Зараз тут.\n", [EDIT_ERROR])
         self.assertEqual(p.returncode, 1)

@@ -67,6 +67,15 @@ class ScanTest(unittest.TestCase):
         lex = make_lex(slovnik="безпека\tнедба\u0301лиця\t21\t\nбезопасность\tбезпе\u0301ка\t21\t\n")
         self.assertEqual(scan_text("Безпека продакшену.\n", lex, keep=set())["candidates"], [])
 
+    def test_phrase_spanning_inline_code_ignored(self):
+        lex = make_lex(calques="в якості\tяк\tв качестве\terror\t\n")
+        self.assertEqual(scan_text("Слово в `x` якості тут.\n", lex, keep=set())["candidates"], [])
+
+    def test_crlf_offsets_match_cli_blocks(self):
+        out = scan_text("Ці задачі.\r\n", self.lex, keep=set())
+        x = out["candidates"][0]
+        self.assertEqual(out["blocks"][x["block"]]["text"][x["start"]:x["end"]], "задачі")
+
     def test_candidate_fields(self):
         c = scan_text("Ці задачі.\n", self.lex, keep=set())["candidates"][0]
         self.assertEqual(set(c), {"block", "start", "end", "match", "type", "level", "suggestions",
@@ -74,6 +83,14 @@ class ScanTest(unittest.TestCase):
 
 
 class ScanCliTest(unittest.TestCase):
+    def test_cli_keeps_crlf_in_blocks(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "a.md").write_bytes("Ці задачі.\r\n".encode("utf-8"))
+        subprocess.run([sys.executable, str(_path.SCRIPTS / "scan.py"), str(d / "a.md"), "-o", str(d / "c.json")],
+                       check=True, capture_output=True)
+        out = json.loads((d / "c.json").read_text(encoding="utf-8"))
+        self.assertEqual(out["blocks"][0]["text"], "Ці задачі.\r\n")
+
     def test_cli_writes_json(self):
         d = Path(tempfile.mkdtemp())
         (d / "a.md").write_text("Ці задачі.\n", encoding="utf-8")
