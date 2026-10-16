@@ -14,9 +14,11 @@ LATIN_STRESSED = {"á": "а", "ó": "о", "é": "е", "ý": "у", "í": "і",
                   "Á": "А", "Ó": "О", "É": "Е", "Ý": "У", "Í": "І"}
 APOSTROPHES = {"’": "'", "ʼ": "'", "`": "'", "‘": "'"}
 
-# Common Ukrainian inflectional endings, longest first; one is stripped per word.
+# Common Ukrainian inflectional endings (nominal and verbal). Every matching ending yields
+# one candidate stem, so «школа»/«школи» share «школ» and «вливати»/«вливаю» share «влива».
 ENDINGS = sorted("ами ями ові еві ого ому ими іми ій ої ою ею ів їв ах ях ам ям ом ем им ім ий "
-                 "а я у ю і ї е о и".split(), key=len, reverse=True)
+                 "ти ють ять уть ать ємо имо емо єте ете ите ає ла ло ли "
+                 "а я у ю і ї е є о и в".split(), key=len, reverse=True)
 REFLEXIVE = ("ться", "ся", "сь")
 MIN_STEM = 3
 MIN_MATCH_STEM = 4      # shorter shared stems collide (вона/вон, кажу/кажись)
@@ -39,7 +41,10 @@ def normalize(s: str) -> str:
 
 
 def stems(word: str) -> list:
-    """The normalized word plus its forms with a reflexive suffix and/or one ending removed."""
+    """The normalized word plus its forms with a reflexive suffix and/or one ending removed.
+
+    Every ending that fits produces a stem (not only the longest), never shorter than MIN_STEM.
+    """
     w = normalize(word)
     out = [w]
     bases = [w]
@@ -53,7 +58,6 @@ def stems(word: str) -> list:
         for e in ENDINGS:
             if b.endswith(e) and len(b) - len(e) >= MIN_STEM:
                 out.append(b[: -len(e)])
-                break
     return list(dict.fromkeys(out))
 
 

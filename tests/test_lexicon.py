@@ -71,6 +71,13 @@ class LookupTest(unittest.TestCase):
         lex = make_lex(lt="туда\tтуди\terror\t\n")
         self.assertEqual(lex.lookup_word("туди"), [])
 
+    def test_verb_forms_match_infinitive(self):
+        lex = make_lex(calques="являтися\tбути\tявляться\terror\t\n", jargon="вливати\tmerge\t\n")
+        for form in ("являється", "являються", "являвся"):
+            self.assertEqual(len(lex.lookup_word(form)), 1, form)
+        for form in ("вливаю", "вливає", "вливав", "вливаємо", "вливають"):
+            self.assertEqual(len(lex.lookup_word(form)), 1, form)
+
     def test_advice_source(self):
         lex = make_lex(soft="айтішник\tайтівець\tadvice\t\n")
         self.assertEqual(lex.lookup_word("айтішник")[0].source, "lt-soft")
